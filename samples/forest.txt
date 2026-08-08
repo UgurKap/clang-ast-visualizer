@@ -1,0 +1,34 @@
+Dumping Derived:
+CXXRecordDecl 0x16695028 <forest.cpp:3:1, line:5:1> line:3:8 struct Derived definition
+|-DefinitionData polymorphic
+| |-DefaultConstructor exists non_trivial needs_implicit
+| |-CopyConstructor simple non_trivial has_const_param needs_overload_resolution implicit_has_const_param
+| |-MoveConstructor exists simple non_trivial needs_overload_resolution
+| |-CopyAssignment non_trivial has_const_param implicit_has_const_param
+| |-MoveAssignment exists simple non_trivial needs_overload_resolution
+| `-Destructor simple non_trivial needs_overload_resolution
+|-public 'BaseA'
+|-private 'BaseB'
+|-CXXRecordDecl 0x166951c8 <col:1, col:8> col:8 implicit struct Derived
+|-CXXMethodDecl 0x166952a8 <line:4:5, col:16> col:10 run 'void ()'
+| |-Overrides: [ 0x16694a58 BaseA::run 'void ()' ]
+| `-OverrideAttr 0x16695348 <col:16>
+|-CXXConstructorDecl 0x166c3b60 <line:3:8> col:8 implicit constexpr Derived 'void (const Derived &)' inline default noexcept-unevaluated 0x166c3b60
+| `-ParmVarDecl 0x166c3c78 <col:8> col:8 'const Derived &'
+|-CXXConstructorDecl 0x166c3df8 <col:8> col:8 implicit constexpr Derived 'void (Derived &&)' inline default noexcept-unevaluated 0x166c3df8
+| `-ParmVarDecl 0x166c3f08 <col:8> col:8 'Derived &&'
+|-CXXMethodDecl 0x166c3fa8 <col:8> col:8 implicit operator= 'Derived &(const Derived &)' inline default noexcept-unevaluated 0x166c3fa8
+| `-ParmVarDecl 0x166c40b8 <col:8> col:8 'const Derived &'
+|-CXXMethodDecl 0x166c4458 <col:8> col:8 implicit operator= 'Derived &(Derived &&)' inline default noexcept-unevaluated 0x166c4458
+| `-ParmVarDecl 0x166c4568 <col:8> col:8 'Derived &&'
+`-CXXDestructorDecl 0x166c45f0 <col:8> col:8 implicit ~Derived 'void () noexcept' inline default
+  `-Overrides: [ 0x16694b40 BaseA::~BaseA 'void () noexcept' ]
+
+Dumping freefn:
+FunctionDecl 0x2986a2b0 <forest.cpp:6:1, col:31> col:5 freefn 'int (int)'
+|-ParmVarDecl 0x2986a1e0 <col:12, col:16> col:16 used z 'int'
+`-CompoundStmt 0x2986a3e8 <col:19, col:31>
+  `-ReturnStmt 0x2986a3d8 <col:21, col:28>
+    `-ImplicitCastExpr 0x2986a3c0 <col:28> 'int' <LValueToRValue>
+      `-DeclRefExpr 0x2986a3a0 <col:28> 'int' lvalue ParmVar 0x2986a1e0 'z' 'int'
+

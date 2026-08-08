@@ -1,0 +1,17 @@
+Dumping documented:
+FunctionDecl 0x25f4a530 <cmt.cpp:3:1, col:50> col:5 documented 'int (int)'
+|-ParmVarDecl 0x25f4a460 <col:16, col:20> col:20 used v 'int'
+|-CompoundStmt 0x25f4a698 <col:23, col:50>
+| `-ReturnStmt 0x25f4a658 <col:25, col:32>
+|   `-ImplicitCastExpr 0x25f4a640 <col:32> 'int' <LValueToRValue>
+|     `-DeclRefExpr 0x25f4a620 <col:32> 'int' lvalue ParmVar 0x25f4a460 'v' 'int'
+`-FullComment 0x25f4a870 <line:1:4, line:2:20>
+  |-ParagraphComment 0x25f4a790 <line:1:4, line:2:4>
+  | |-TextComment 0x25f4a6f0 <line:1:4, col:13> Text=" Doc with "
+  | |-TextComment 0x25f4a710 <col:14, col:19> Text="<angle"
+  | |-TextComment 0x25f4a730 <col:20, col:57> Text="> and 'quotes' and "doubles" and don't"
+  | `-TextComment 0x25f4a750 <line:2:4> Text=" "
+  `-ParamCommandComment 0x25f4a7b0 <col:5, col:20> [in] implicitly Param="v" ParamIndex=0
+    `-ParagraphComment 0x25f4a840 <col:13, col:20>
+      `-TextComment 0x25f4a810 <col:13, col:20> Text=" a value"
+

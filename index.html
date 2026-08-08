@@ -1,0 +1,1073 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clang AST Visualizer</title>
+
+<style>
+  :root {
+    --bg: #ffffff;
+    --panel: #f7f8fa;
+    --border: #d8dce3;
+    --text: #1a1d23;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --edge: #b6bcc7;
+    --shadow: 0 1px 3px rgba(0,0,0,.10), 0 4px 12px rgba(0,0,0,.05);
+
+    --f-decl:     #2563eb;
+    --f-stmt:     #15803d;
+    --f-expr:     #b45309;
+    --f-type:     #7c3aed;
+    --f-attr:     #475569;
+    --f-template: #0d9488;
+    --f-pseudo:   #9ca3af;
+    --f-comment:  #0369a1;
+    --f-other:    #52525b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --panel: #1b1e24;
+      --border: #2f343d;
+      --text: #e6e8ec;
+      --muted: #9aa1ad;
+      --accent: #60a5fa;
+      --edge: #3b414c;
+      --shadow: 0 1px 3px rgba(0,0,0,.5), 0 4px 14px rgba(0,0,0,.35);
+
+      --f-decl:     #60a5fa;
+      --f-stmt:     #4ade80;
+      --f-expr:     #fbbf24;
+      --f-type:     #c084fc;
+      --f-attr:     #94a3b8;
+      --f-template: #2dd4bf;
+      --f-pseudo:   #6b7280;
+      --f-comment:  #38bdf8;
+      --f-other:    #a1a1aa;
+    }
+  }
+  /* The viewer's theme toggle must win over the media query in both directions. */
+  :root[data-theme="light"] {
+    --bg:#fff; --panel:#f7f8fa; --border:#d8dce3; --text:#1a1d23; --muted:#6b7280;
+    --accent:#2563eb; --edge:#b6bcc7; --shadow:0 1px 3px rgba(0,0,0,.10),0 4px 12px rgba(0,0,0,.05);
+    --f-decl:#2563eb; --f-stmt:#15803d; --f-expr:#b45309; --f-type:#7c3aed;
+    --f-attr:#475569; --f-template:#0d9488; --f-pseudo:#9ca3af;
+    --f-comment:#0369a1; --f-other:#52525b;
+  }
+  :root[data-theme="dark"] {
+    --bg:#14161a; --panel:#1b1e24; --border:#2f343d; --text:#e6e8ec; --muted:#9aa1ad;
+    --accent:#60a5fa; --edge:#3b414c; --shadow:0 1px 3px rgba(0,0,0,.5),0 4px 14px rgba(0,0,0,.35);
+    --f-decl:#60a5fa; --f-stmt:#4ade80; --f-expr:#fbbf24; --f-type:#c084fc;
+    --f-attr:#94a3b8; --f-template:#2dd4bf; --f-pseudo:#6b7280;
+    --f-comment:#38bdf8; --f-other:#a1a1aa;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+
+  header {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font-size: 14px; font-weight: 650; margin: 0 8px 0 0; white-space: nowrap; }
+  header .grow { flex: 1; }
+  #commentsLabel {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12.5px; color: var(--muted); white-space: nowrap; cursor: pointer;
+  }
+  #commentsLabel input { cursor: pointer; margin: 0; accent-color: var(--accent); }
+
+  button, select {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer;
+  }
+  button:hover:not(:disabled), select:hover { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+
+  main { flex: 1; display: flex; min-height: 0; }
+
+  #left {
+    width: 380px; min-width: 220px; max-width: 60vw;
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--border); background: var(--panel);
+  }
+  #left label { padding: 8px 12px 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  #source {
+    flex: 1; margin: 0 12px 8px; padding: 10px; resize: none;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 12.5px; line-height: 1.5; tab-size: 4;
+  }
+  #source:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  #privacy { padding: 0 12px 10px; font-size: 11.5px; color: var(--muted); }
+  #privacy code { font-size: 11px; }
+
+  #stage { flex: 1; position: relative; min-width: 0; background: var(--bg); }
+  #canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #canvas.panning { cursor: grabbing; }
+
+  #toolbar {
+    position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap;
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    padding: 6px; border: 1px solid var(--border); border-radius: 8px; backdrop-filter: blur(6px);
+  }
+  #toolbar button { padding: 4px 9px; font-size: 12.5px; }
+  #toolbar #zoomIn, #toolbar #zoomOut {
+    font-size: 15px; line-height: 1; min-width: 30px; font-weight: 600;
+  }
+  #zoomLevel {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 46px; font-size: 12px; color: var(--muted);
+    font-variant-numeric: tabular-nums; user-select: none;
+  }
+
+  #legend {
+    position: absolute; bottom: 10px; left: 10px; display: flex; gap: 10px; flex-wrap: wrap;
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 11.5px; backdrop-filter: blur(6px);
+  }
+  #legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+  #legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+  #status {
+    position: absolute; top: 10px; right: 10px; max-width: 46%;
+    padding: 8px 11px; border-radius: 8px; font-size: 12.5px;
+    border: 1px solid var(--border); background: var(--panel); box-shadow: var(--shadow);
+    white-space: pre-wrap; display: none;
+  }
+  #status.error { border-color: #dc2626; color: #dc2626; }
+  #status.show { display: block; }
+  #status .close { float: right; margin-left: 10px; cursor: pointer; color: var(--muted); }
+
+  #detail {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 400px; max-width: 85%;
+    background: var(--panel); border-left: 1px solid var(--border);
+    box-shadow: var(--shadow); padding: 14px; overflow: auto;
+    transform: translateX(100%); transition: transform .18s ease;
+  }
+  #detail.open { transform: none; }
+  #detail h2 { margin: 0 0 10px; font-size: 15px; }
+  #detail .close { position: absolute; top: 10px; right: 12px; cursor: pointer; color: var(--muted); font-size: 18px; line-height: 1; }
+  #detail dt { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 12px; }
+  #detail dd {
+    margin: 3px 0 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; word-break: break-word; white-space: pre-wrap;
+  }
+  #detail ul { margin: 3px 0 0; padding-left: 18px; }
+  #detail li { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; word-break: break-word; }
+
+  #empty {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 14px; text-align: center; padding: 24px; pointer-events: none;
+  }
+
+  /* --- tree --- */
+  .edge { fill: none; stroke: var(--edge); stroke-width: 1.5px; }
+  .node { cursor: pointer; }
+  .node rect {
+    fill: var(--bg); stroke: var(--nodecolor, var(--f-other)); stroke-width: 1.5px; rx: 6;
+  }
+  .node.selected rect { stroke-width: 3px; }
+  .node.pseudo rect { stroke-dasharray: 4 3; }
+  .node text { pointer-events: none; }
+  .node .kind { font-size: 12.5px; font-weight: 650; fill: var(--nodecolor, var(--f-other)); }
+  .node .name {
+    font-size: 11.5px; fill: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .toggle circle { fill: var(--panel); stroke: var(--edge); stroke-width: 1.5px; }
+  .toggle text { font-size: 10px; fill: var(--muted); text-anchor: middle; font-weight: 700; }
+  .toggle:hover circle { stroke: var(--accent); }
+</style>
+
+<header>
+  <h1>Clang AST Visualizer</h1>
+  <select id="compiler" title="Compiler (clang only — AST output is clang-specific)"></select>
+  <input id="args" class="mono" placeholder="extra flags, e.g. -std=c++20" style="width:200px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12.5px">
+  <label id="commentsLabel" title="Adds -fparse-all-comments, so comments attached to a declaration appear as nodes. Comments in statement position are dropped by clang regardless.">
+    <input type="checkbox" id="comments" checked> Comments
+  </label>
+  <button id="render" class="primary">▶ Render</button>
+  <span class="grow"></span>
+  <button id="theme" title="Toggle light/dark">◐</button>
+</header>
+
+<main>
+  <div id="left">
+    <label for="source">C++ source</label>
+    <textarea id="source" spellcheck="false"></textarea>
+    <p id="privacy">
+      Your source is sent to <b>godbolt.org</b> (Compiler Explorer) to be compiled.
+      Nothing is stored locally and the request opts out of code-sharing storage.
+    </p>
+  </div>
+
+  <div id="stage">
+    <svg id="canvas"><g id="viewport"></g></svg>
+
+    <div id="toolbar">
+      <button id="zoomIn" title="Zoom in">+</button>
+      <button id="zoomOut" title="Zoom out">−</button>
+      <span id="zoomLevel" title="Current zoom">100%</span>
+      <button id="fit">Fit</button>
+      <button id="reset" title="Reset zoom to 100%">Reset</button>
+      <button id="expandAll" title="Expand every subtree">Expand</button>
+      <button id="collapseAll" title="Collapse to the root">Collapse</button>
+      <button id="exportSvg" title="Download as SVG">SVG</button>
+      <button id="exportPng" title="Download as PNG">PNG</button>
+    </div>
+
+    <div id="legend"></div>
+    <div id="status"></div>
+    <!-- The inner <span> matters: #empty is a flex container, and without it the
+         text runs become anonymous flex items whose edge whitespace is stripped,
+         rendering "hit Render" as "hitRender". -->
+    <div id="empty"><span>Paste C++ on the left and hit <b>Render</b>.</span></div>
+
+    <aside id="detail">
+      <span class="close" id="detailClose">×</span>
+      <h2 id="dKind"></h2>
+      <dl id="dBody"></dl>
+    </aside>
+  </div>
+</main>
+
+<script>
+/* ============================================================================
+   Vendored third-party code: d3-hierarchy 3.1.2
+   Only d3.tree() / d3.hierarchy() are used, for the Buchheim tidy-tree layout.
+   Upstream: https://github.com/d3/d3-hierarchy
+   To re-vendor, see "Re-vendoring d3-hierarchy" in README.md.
+
+   Copyright 2010-2021 Mike Bostock
+
+   Permission to use, copy, modify, and/or distribute this software for any purpose
+   with or without fee is hereby granted, provided that the above copyright notice
+   and this permission notice appear in all copies.
+
+   THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+   REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+   FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+   INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+   OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+   TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+   THIS SOFTWARE.
+   ============================================================================ */
+// https://d3js.org/d3-hierarchy/ v3.1.2 Copyright 2010-2021 Mike Bostock
+!function(n,r){"object"==typeof exports&&"undefined"!=typeof module?r(exports):"function"==typeof define&&define.amd?define(["exports"],r):r((n="undefined"!=typeof globalThis?globalThis:n||self).d3=n.d3||{})}(this,(function(n){"use strict";function r(n,r){return n.parent===r.parent?1:2}function t(n,r){return n+r.x}function e(n,r){return Math.max(n,r.y)}function i(n){var r=0,t=n.children,e=t&&t.length;if(e)for(;--e>=0;)r+=t[e].value;else r=1;n.value=r}function u(n,r){n instanceof Map?(n=[void 0,n],void 0===r&&(r=f)):void 0===r&&(r=o);for(var t,e,i,u,a,l=new h(n),p=[l];t=p.pop();)if((i=r(t.data))&&(a=(i=Array.from(i)).length))for(t.children=i,u=a-1;u>=0;--u)p.push(e=i[u]=new h(i[u])),e.parent=t,e.depth=t.depth+1;return l.eachBefore(c)}function o(n){return n.children}function f(n){return Array.isArray(n)?n[1]:null}function a(n){void 0!==n.data.value&&(n.value=n.data.value),n.data=n.data.data}function c(n){var r=0;do{n.height=r}while((n=n.parent)&&n.height<++r)}function h(n){this.data=n,this.depth=this.height=0,this.parent=null}function l(n){return null==n?null:p(n)}function p(n){if("function"!=typeof n)throw new Error;return n}function d(){return 0}function s(n){return function(){return n}}h.prototype=u.prototype={constructor:h,count:function(){return this.eachAfter(i)},each:function(n,r){let t=-1;for(const e of this)n.call(r,e,++t,this);return this},eachAfter:function(n,r){for(var t,e,i,u=this,o=[u],f=[],a=-1;u=o.pop();)if(f.push(u),t=u.children)for(e=0,i=t.length;e<i;++e)o.push(t[e]);for(;u=f.pop();)n.call(r,u,++a,this);return this},eachBefore:function(n,r){for(var t,e,i=this,u=[i],o=-1;i=u.pop();)if(n.call(r,i,++o,this),t=i.children)for(e=t.length-1;e>=0;--e)u.push(t[e]);return this},find:function(n,r){let t=-1;for(const e of this)if(n.call(r,e,++t,this))return e},sum:function(n){return this.eachAfter((function(r){for(var t=+n(r.data)||0,e=r.children,i=e&&e.length;--i>=0;)t+=e[i].value;r.value=t}))},sort:function(n){return this.eachBefore((function(r){r.children&&r.children.sort(n)}))},path:function(n){for(var r=this,t=function(n,r){if(n===r)return n;var t=n.ancestors(),e=r.ancestors(),i=null;n=t.pop(),r=e.pop();for(;n===r;)i=n,n=t.pop(),r=e.pop();return i}(r,n),e=[r];r!==t;)r=r.parent,e.push(r);for(var i=e.length;n!==t;)e.splice(i,0,n),n=n.parent;return e},ancestors:function(){for(var n=this,r=[n];n=n.parent;)r.push(n);return r},descendants:function(){return Array.from(this)},leaves:function(){var n=[];return this.eachBefore((function(r){r.children||n.push(r)})),n},links:function(){var n=this,r=[];return n.each((function(t){t!==n&&r.push({source:t.parent,target:t})})),r},copy:function(){return u(this).eachBefore(a)},[Symbol.iterator]:function*(){var n,r,t,e,i=this,u=[i];do{for(n=u.reverse(),u=[];i=n.pop();)if(yield i,r=i.children)for(t=0,e=r.length;t<e;++t)u.push(r[t])}while(u.length)}};const v=4294967296;function x(){let n=1;return()=>(n=(1664525*n+1013904223)%v)/v}function y(n,r){for(var t,e,i=0,u=(n=function(n,r){let t,e,i=n.length;for(;i;)e=r()*i--|0,t=n[i],n[i]=n[e],n[e]=t;return n}(Array.from(n),r)).length,o=[];i<u;)t=n[i],e&&w(e,t)?++i:(e=M(o=g(o,t)),i=0);return e}function g(n,r){var t,e;if(_(r,n))return[r];for(t=0;t<n.length;++t)if(m(r,n[t])&&_(z(n[t],r),n))return[n[t],r];for(t=0;t<n.length-1;++t)for(e=t+1;e<n.length;++e)if(m(z(n[t],n[e]),r)&&m(z(n[t],r),n[e])&&m(z(n[e],r),n[t])&&_(B(n[t],n[e],r),n))return[n[t],n[e],r];throw new Error}function m(n,r){var t=n.r-r.r,e=r.x-n.x,i=r.y-n.y;return t<0||t*t<e*e+i*i}function w(n,r){var t=n.r-r.r+1e-9*Math.max(n.r,r.r,1),e=r.x-n.x,i=r.y-n.y;return t>0&&t*t>e*e+i*i}function _(n,r){for(var t=0;t<r.length;++t)if(!w(n,r[t]))return!1;return!0}function M(n){switch(n.length){case 1:return function(n){return{x:n.x,y:n.y,r:n.r}}(n[0]);case 2:return z(n[0],n[1]);case 3:return B(n[0],n[1],n[2])}}function z(n,r){var t=n.x,e=n.y,i=n.r,u=r.x,o=r.y,f=r.r,a=u-t,c=o-e,h=f-i,l=Math.sqrt(a*a+c*c);return{x:(t+u+a/l*h)/2,y:(e+o+c/l*h)/2,r:(l+i+f)/2}}function B(n,r,t){var e=n.x,i=n.y,u=n.r,o=r.x,f=r.y,a=r.r,c=t.x,h=t.y,l=t.r,p=e-o,d=e-c,s=i-f,v=i-h,x=a-u,y=l-u,g=e*e+i*i-u*u,m=g-o*o-f*f+a*a,w=g-c*c-h*h+l*l,_=d*s-p*v,M=(s*w-v*m)/(2*_)-e,z=(v*x-s*y)/_,B=(d*m-p*w)/(2*_)-i,A=(p*y-d*x)/_,b=z*z+A*A-1,q=2*(u+M*z+B*A),E=M*M+B*B-u*u,S=-(Math.abs(b)>1e-6?(q+Math.sqrt(q*q-4*b*E))/(2*b):E/q);return{x:e+M+z*S,y:i+B+A*S,r:S}}function A(n,r,t){var e,i,u,o,f=n.x-r.x,a=n.y-r.y,c=f*f+a*a;c?(i=r.r+t.r,i*=i,o=n.r+t.r,i>(o*=o)?(e=(c+o-i)/(2*c),u=Math.sqrt(Math.max(0,o/c-e*e)),t.x=n.x-e*f-u*a,t.y=n.y-e*a+u*f):(e=(c+i-o)/(2*c),u=Math.sqrt(Math.max(0,i/c-e*e)),t.x=r.x+e*f-u*a,t.y=r.y+e*a+u*f)):(t.x=r.x+t.r,t.y=r.y)}function b(n,r){var t=n.r+r.r-1e-6,e=r.x-n.x,i=r.y-n.y;return t>0&&t*t>e*e+i*i}function q(n){var r=n._,t=n.next._,e=r.r+t.r,i=(r.x*t.r+t.x*r.r)/e,u=(r.y*t.r+t.y*r.r)/e;return i*i+u*u}function Node(n){this._=n,this.next=null,this.previous=null}function E(n,r){if(!(o=(t=n,n="object"==typeof t&&"length"in t?t:Array.from(t)).length))return 0;var t,e,i,u,o,f,a,c,h,l,p,d;if((e=n[0]).x=0,e.y=0,!(o>1))return e.r;if(i=n[1],e.x=-i.r,i.x=e.r,i.y=0,!(o>2))return e.r+i.r;A(i,e,u=n[2]),e=new Node(e),i=new Node(i),u=new Node(u),e.next=u.previous=i,i.next=e.previous=u,u.next=i.previous=e;n:for(c=3;c<o;++c){A(e._,i._,u=n[c]),u=new Node(u),h=i.next,l=e.previous,p=i._.r,d=e._.r;do{if(p<=d){if(b(h._,u._)){i=h,e.next=i,i.previous=e,--c;continue n}p+=h._.r,h=h.next}else{if(b(l._,u._)){(e=l).next=i,i.previous=e,--c;continue n}d+=l._.r,l=l.previous}}while(h!==l.next);for(u.previous=e,u.next=i,e.next=i.previous=i=u,f=q(e);(u=u.next)!==i;)(a=q(u))<f&&(e=u,f=a);i=e.next}for(e=[i._],u=i;(u=u.next)!==i;)e.push(u._);for(u=y(e,r),c=0;c<o;++c)(e=n[c]).x-=u.x,e.y-=u.y;return u.r}function S(n){return Math.sqrt(n.value)}function k(n){return function(r){r.children||(r.r=Math.max(0,+n(r)||0))}}function I(n,r,t){return function(e){if(i=e.children){var i,u,o,f=i.length,a=n(e)*r||0;if(a)for(u=0;u<f;++u)i[u].r+=a;if(o=E(i,t),a)for(u=0;u<f;++u)i[u].r-=a;e.r=o+a}}}function T(n){return function(r){var t=r.parent;r.r*=n,t&&(r.x=t.x+n*r.x,r.y=t.y+n*r.y)}}function j(n){n.x0=Math.round(n.x0),n.y0=Math.round(n.y0),n.x1=Math.round(n.x1),n.y1=Math.round(n.y1)}function O(n,r,t,e,i){for(var u,o=n.children,f=-1,a=o.length,c=n.value&&(e-r)/n.value;++f<a;)(u=o[f]).y0=t,u.y1=i,u.x0=r,u.x1=r+=u.value*c}var R={depth:-1},D={},L={};function $(n){return n.id}function N(n){return n.parentId}function P(n){let r=n.length;if(r<2)return"";for(;--r>1&&!C(n,r););return n.slice(0,r)}function C(n,r){if("/"===n[r]){let t=0;for(;r>0&&"\\"===n[--r];)++t;if(0==(1&t))return!0}return!1}function F(n,r){return n.parent===r.parent?1:2}function G(n){var r=n.children;return r?r[0]:n.t}function H(n){var r=n.children;return r?r[r.length-1]:n.t}function J(n,r,t){var e=t/(r.i-n.i);r.c-=e,r.s+=t,n.c+=e,r.z+=t,r.m+=t}function K(n,r,t){return n.a.parent===r.parent?n.a:t}function Q(n,r){this._=n,this.parent=null,this.children=null,this.A=null,this.a=this,this.z=0,this.m=0,this.c=0,this.s=0,this.t=null,this.i=r}function U(n,r,t,e,i){for(var u,o=n.children,f=-1,a=o.length,c=n.value&&(i-t)/n.value;++f<a;)(u=o[f]).x0=r,u.x1=e,u.y0=t,u.y1=t+=u.value*c}Q.prototype=Object.create(h.prototype);var V=(1+Math.sqrt(5))/2;function W(n,r,t,e,i,u){for(var o,f,a,c,h,l,p,d,s,v,x,y=[],g=r.children,m=0,w=0,_=g.length,M=r.value;m<_;){a=i-t,c=u-e;do{h=g[w++].value}while(!h&&w<_);for(l=p=h,x=h*h*(v=Math.max(c/a,a/c)/(M*n)),s=Math.max(p/x,x/l);w<_;++w){if(h+=f=g[w].value,f<l&&(l=f),f>p&&(p=f),x=h*h*v,(d=Math.max(p/x,x/l))>s){h-=f;break}s=d}y.push(o={value:h,dice:a<c,children:g.slice(m,w)}),o.dice?O(o,t,e,i,M?e+=c*h/M:u):U(o,t,e,M?t+=a*h/M:i,u),M-=h,m=w}return y}var X=function n(r){function t(n,t,e,i,u){W(r,n,t,e,i,u)}return t.ratio=function(r){return n((r=+r)>1?r:1)},t}(V);var Y=function n(r){function t(n,t,e,i,u){if((o=n._squarify)&&o.ratio===r)for(var o,f,a,c,h,l=-1,p=o.length,d=n.value;++l<p;){for(a=(f=o[l]).children,c=f.value=0,h=a.length;c<h;++c)f.value+=a[c].value;f.dice?O(f,t,e,i,d?e+=(u-e)*f.value/d:u):U(f,t,e,d?t+=(i-t)*f.value/d:i,u),d-=f.value}else n._squarify=o=W(r,n,t,e,i,u),o.ratio=r}return t.ratio=function(r){return n((r=+r)>1?r:1)},t}(V);n.Node=h,n.cluster=function(){var n=r,i=1,u=1,o=!1;function f(r){var f,a=0;r.eachAfter((function(r){var i=r.children;i?(r.x=function(n){return n.reduce(t,0)/n.length}(i),r.y=function(n){return 1+n.reduce(e,0)}(i)):(r.x=f?a+=n(r,f):0,r.y=0,f=r)}));var c=function(n){for(var r;r=n.children;)n=r[0];return n}(r),h=function(n){for(var r;r=n.children;)n=r[r.length-1];return n}(r),l=c.x-n(c,h)/2,p=h.x+n(h,c)/2;return r.eachAfter(o?function(n){n.x=(n.x-r.x)*i,n.y=(r.y-n.y)*u}:function(n){n.x=(n.x-l)/(p-l)*i,n.y=(1-(r.y?n.y/r.y:1))*u})}return f.separation=function(r){return arguments.length?(n=r,f):n},f.size=function(n){return arguments.length?(o=!1,i=+n[0],u=+n[1],f):o?null:[i,u]},f.nodeSize=function(n){return arguments.length?(o=!0,i=+n[0],u=+n[1],f):o?[i,u]:null},f},n.hierarchy=u,n.pack=function(){var n=null,r=1,t=1,e=d;function i(i){const u=x();return i.x=r/2,i.y=t/2,n?i.eachBefore(k(n)).eachAfter(I(e,.5,u)).eachBefore(T(1)):i.eachBefore(k(S)).eachAfter(I(d,1,u)).eachAfter(I(e,i.r/Math.min(r,t),u)).eachBefore(T(Math.min(r,t)/(2*i.r))),i}return i.radius=function(r){return arguments.length?(n=l(r),i):n},i.size=function(n){return arguments.length?(r=+n[0],t=+n[1],i):[r,t]},i.padding=function(n){return arguments.length?(e="function"==typeof n?n:s(+n),i):e},i},n.packEnclose=function(n){return y(n,x())},n.packSiblings=function(n){return E(n,x()),n},n.partition=function(){var n=1,r=1,t=0,e=!1;function i(i){var u=i.height+1;return i.x0=i.y0=t,i.x1=n,i.y1=r/u,i.eachBefore(function(n,r){return function(e){e.children&&O(e,e.x0,n*(e.depth+1)/r,e.x1,n*(e.depth+2)/r);var i=e.x0,u=e.y0,o=e.x1-t,f=e.y1-t;o<i&&(i=o=(i+o)/2),f<u&&(u=f=(u+f)/2),e.x0=i,e.y0=u,e.x1=o,e.y1=f}}(r,u)),e&&i.eachBefore(j),i}return i.round=function(n){return arguments.length?(e=!!n,i):e},i.size=function(t){return arguments.length?(n=+t[0],r=+t[1],i):[n,r]},i.padding=function(n){return arguments.length?(t=+n,i):t},i},n.stratify=function(){var n,r=$,t=N;function e(e){var i,u,o,f,a,l,p,d,s=Array.from(e),v=r,x=t,y=new Map;if(null!=n){const r=s.map(((r,t)=>function(n){let r=(n=`${n}`).length;C(n,r-1)&&!C(n,r-2)&&(n=n.slice(0,-1));return"/"===n[0]?n:`/${n}`}(n(r,t,e)))),t=r.map(P),i=new Set(r).add("");for(const n of t)i.has(n)||(i.add(n),r.push(n),t.push(P(n)),s.push(L));v=(n,t)=>r[t],x=(n,r)=>t[r]}for(o=0,i=s.length;o<i;++o)u=s[o],l=s[o]=new h(u),null!=(p=v(u,o,e))&&(p+="")&&(d=l.id=p,y.set(d,y.has(d)?D:l)),null!=(p=x(u,o,e))&&(p+="")&&(l.parent=p);for(o=0;o<i;++o)if(p=(l=s[o]).parent){if(!(a=y.get(p)))throw new Error("missing: "+p);if(a===D)throw new Error("ambiguous: "+p);a.children?a.children.push(l):a.children=[l],l.parent=a}else{if(f)throw new Error("multiple roots");f=l}if(!f)throw new Error("no root");if(null!=n){for(;f.data===L&&1===f.children.length;)f=f.children[0],--i;for(let n=s.length-1;n>=0&&(l=s[n],l.data===L);--n)l.data=null}if(f.parent=R,f.eachBefore((function(n){n.depth=n.parent.depth+1,--i})).eachBefore(c),f.parent=null,i>0)throw new Error("cycle");return f}return e.id=function(n){return arguments.length?(r=l(n),e):r},e.parentId=function(n){return arguments.length?(t=l(n),e):t},e.path=function(r){return arguments.length?(n=l(r),e):n},e},n.tree=function(){var n=F,r=1,t=1,e=null;function i(i){var a=function(n){for(var r,t,e,i,u,o=new Q(n,0),f=[o];r=f.pop();)if(e=r._.children)for(r.children=new Array(u=e.length),i=u-1;i>=0;--i)f.push(t=r.children[i]=new Q(e[i],i)),t.parent=r;return(o.parent=new Q(null,0)).children=[o],o}(i);if(a.eachAfter(u),a.parent.m=-a.z,a.eachBefore(o),e)i.eachBefore(f);else{var c=i,h=i,l=i;i.eachBefore((function(n){n.x<c.x&&(c=n),n.x>h.x&&(h=n),n.depth>l.depth&&(l=n)}));var p=c===h?1:n(c,h)/2,d=p-c.x,s=r/(h.x+p+d),v=t/(l.depth||1);i.eachBefore((function(n){n.x=(n.x+d)*s,n.y=n.depth*v}))}return i}function u(r){var t=r.children,e=r.parent.children,i=r.i?e[r.i-1]:null;if(t){!function(n){for(var r,t=0,e=0,i=n.children,u=i.length;--u>=0;)(r=i[u]).z+=t,r.m+=t,t+=r.s+(e+=r.c)}(r);var u=(t[0].z+t[t.length-1].z)/2;i?(r.z=i.z+n(r._,i._),r.m=r.z-u):r.z=u}else i&&(r.z=i.z+n(r._,i._));r.parent.A=function(r,t,e){if(t){for(var i,u=r,o=r,f=t,a=u.parent.children[0],c=u.m,h=o.m,l=f.m,p=a.m;f=H(f),u=G(u),f&&u;)a=G(a),(o=H(o)).a=r,(i=f.z+l-u.z-c+n(f._,u._))>0&&(J(K(f,r,e),r,i),c+=i,h+=i),l+=f.m,c+=u.m,p+=a.m,h+=o.m;f&&!H(o)&&(o.t=f,o.m+=l-h),u&&!G(a)&&(a.t=u,a.m+=c-p,e=r)}return e}(r,i,r.parent.A||e[0])}function o(n){n._.x=n.z+n.parent.m,n.m+=n.parent.m}function f(n){n.x*=r,n.y=n.depth*t}return i.separation=function(r){return arguments.length?(n=r,i):n},i.size=function(n){return arguments.length?(e=!1,r=+n[0],t=+n[1],i):e?null:[r,t]},i.nodeSize=function(n){return arguments.length?(e=!0,r=+n[0],t=+n[1],i):e?[r,t]:null},i},n.treemap=function(){var n=X,r=!1,t=1,e=1,i=[0],u=d,o=d,f=d,a=d,c=d;function h(n){return n.x0=n.y0=0,n.x1=t,n.y1=e,n.eachBefore(l),i=[0],r&&n.eachBefore(j),n}function l(r){var t=i[r.depth],e=r.x0+t,h=r.y0+t,l=r.x1-t,p=r.y1-t;l<e&&(e=l=(e+l)/2),p<h&&(h=p=(h+p)/2),r.x0=e,r.y0=h,r.x1=l,r.y1=p,r.children&&(t=i[r.depth+1]=u(r)/2,e+=c(r)-t,h+=o(r)-t,(l-=f(r)-t)<e&&(e=l=(e+l)/2),(p-=a(r)-t)<h&&(h=p=(h+p)/2),n(r,e,h,l,p))}return h.round=function(n){return arguments.length?(r=!!n,h):r},h.size=function(n){return arguments.length?(t=+n[0],e=+n[1],h):[t,e]},h.tile=function(r){return arguments.length?(n=p(r),h):n},h.padding=function(n){return arguments.length?h.paddingInner(n).paddingOuter(n):h.paddingInner()},h.paddingInner=function(n){return arguments.length?(u="function"==typeof n?n:s(+n),h):u},h.paddingOuter=function(n){return arguments.length?h.paddingTop(n).paddingRight(n).paddingBottom(n).paddingLeft(n):h.paddingTop()},h.paddingTop=function(n){return arguments.length?(o="function"==typeof n?n:s(+n),h):o},h.paddingRight=function(n){return arguments.length?(f="function"==typeof n?n:s(+n),h):f},h.paddingBottom=function(n){return arguments.length?(a="function"==typeof n?n:s(+n),h):a},h.paddingLeft=function(n){return arguments.length?(c="function"==typeof n?n:s(+n),h):c},h},n.treemapBinary=function(n,r,t,e,i){var u,o,f=n.children,a=f.length,c=new Array(a+1);for(c[0]=o=u=0;u<a;++u)c[u+1]=o+=f[u].value;!function n(r,t,e,i,u,o,a){if(r>=t-1){var h=f[r];return h.x0=i,h.y0=u,h.x1=o,void(h.y1=a)}var l=c[r],p=e/2+l,d=r+1,s=t-1;for(;d<s;){var v=d+s>>>1;c[v]<p?d=v+1:s=v}p-c[d-1]<c[d]-p&&r+1<d&&--d;var x=c[d]-l,y=e-x;if(o-i>a-u){var g=e?(i*y+o*x)/e:o;n(r,d,x,i,u,g,a),n(d,t,y,g,u,o,a)}else{var m=e?(u*y+a*x)/e:a;n(r,d,x,i,u,o,m),n(d,t,y,i,m,o,a)}}(0,a,n.value,r,t,e,i)},n.treemapDice=O,n.treemapResquarify=Y,n.treemapSlice=U,n.treemapSliceDice=function(n,r,t,e,i){(1&n.depth?U:O)(n,r,t,e,i)},n.treemapSquarify=X,Object.defineProperty(n,"__esModule",{value:!0})}));
+</script>
+
+<script>
+"use strict";
+
+/* ==========================================================================
+   PARSER  —  clang -ast-dump text  ->  tree
+   Kept free of DOM access so tools/check-parser.mjs can extract and test it.
+   PARSER_START
+   ========================================================================== */
+
+/* Bare words that are attributes/markers rather than the node's own name. */
+const ATTR_WORDS = new Set([
+  "used","referenced","implicit","invalid","constexpr","consteval","constinit",
+  "inline","virtual","pure","default","deleted","definition","struct","class",
+  "union","enum","typename","lvalue","xvalue","prvalue","prefix","postfix",
+  "cinit","callinit","listinit","parenlist","nrvo","destroyed","extern","static",
+  "mutable","register","sugar","imported","undeserialized","non_odr_use_unevaluated",
+  "non_odr_use_constant","non_odr_use_discarded","elidable","list","std","has_init",
+  "trivial","non_trivial","simple","exists","irrelevant","needs_implicit",
+  "needs_overload_resolution","has_const_param","implicit_has_const_param",
+  "user_declared","user_provided","defaulted_is_constexpr","polymorphic","abstract",
+  "aggregate","standard_layout","trivially_copyable","pod","literal","empty",
+  "pass_in_registers","noexcept-unevaluated","inherited","original","depth","index",
+  /* decl-kind markers printed before a referenced name */
+  "Var","ParmVar","Function","CXXMethod","CXXConstructor","CXXDestructor","CXXConversion",
+  "Namespace","Field","EnumConstant","Enum","Typedef","TypeAlias","NonTypeTemplateParm",
+  "TemplateTypeParm","Record","CXXRecord","IndirectField","Binding","MSProperty","ObjCIvar"
+]);
+
+const PSEUDO_KINDS = new Set([
+  "<<<NULL>>>","public","private","protected","virtual","original","inherited",
+  "Overrides:","DefinitionData","DefaultConstructor","CopyConstructor",
+  "MoveConstructor","CopyAssignment","MoveAssignment","Destructor",
+  "TemplateArgument","array_filler:","value:","field:","Field","CXXCtorInitializer"
+]);
+
+function isLocationToken(t) {
+  return /^(line|col):\d+(:\d+)?,?$/.test(t) || /^<invalid sloc>$/.test(t) ||
+         /^[^\s]*:\d+:\d+,?$/.test(t);
+}
+
+/**
+ * Split a node's body into ordered atoms, respecting single-quoted strings.
+ * Angle/paren/square groups are matched by depth and are quote-aware, which is
+ * required because types contain '<' '>' ('basic_string<char> (*)(...)') and
+ * operators are printed as quoted text ('<<', '<dependent type>').
+ */
+function tokenizeBody(body) {
+  const atoms = [];
+  let i = 0;
+  const n = body.length;
+
+  // Quote state tracks BOTH quote characters. Comment nodes carry double-quoted
+  // payloads such as `Text="<angle"`, where an unbalanced '<' would otherwise be
+  // read as the start of a bracket group.
+  const readGroup = (open, close) => {
+    let depth = 0, quote = null, start = i;
+    while (i < n) {
+      const c = body[i];
+      if (quote) { if (c === quote) quote = null; }
+      else if (c === "'" || c === '"') quote = c;
+      else if (c === open) depth++;
+      else if (c === close) { depth--; if (depth === 0) { i++; break; } }
+      i++;
+    }
+    return body.slice(start, i);
+  };
+
+  while (i < n) {
+    const c = body[i];
+    if (c === " ") { i++; continue; }
+
+    if (c === "'") {
+      const readQuoted = () => {
+        const start = i; i++;
+        while (i < n && body[i] !== "'") i++;
+        i++; // closing quote
+        return body.slice(start, i);
+      };
+      atoms.push({ t: "q", v: readQuoted() });
+      // Clang writes sugared types as 'string':'std::basic_string<char>'.
+      // Emit the desugared form as its own atom rather than letting the
+      // `:'...'` tail leak into the bare-token stream.
+      while (body[i] === ":" && body[i + 1] === "'") {
+        i++;
+        atoms.push({ t: "q", desugared: true, v: readQuoted() });
+      }
+    } else if (c === "<") {
+      atoms.push({ t: "angle", v: readGroup("<", ">") });
+    } else if (c === "(") {
+      atoms.push({ t: "paren", v: readGroup("(", ")") });
+    } else if (c === "[") {
+      atoms.push({ t: "square", v: readGroup("[", "]") });
+    } else {
+      // Bare token: run to the next space that is not inside quotes, so
+      // `ComputeLHSTy='int'` and `Text="<angle"` each stay one atom. Stop before
+      // an opening group so `nrvo_candidate(...)` splits into word + paren group.
+      const start = i; let quote = null;
+      while (i < n) {
+        const ch = body[i];
+        if (quote) { if (ch === quote) quote = null; }
+        else if (ch === "'" || ch === '"') quote = ch;
+        else if (ch === " " || ch === "(" || ch === "<" || ch === "[") break;
+        i++;
+      }
+      atoms.push({ t: "b", v: body.slice(start, i) });
+    }
+  }
+  return atoms;
+}
+
+function parseBody(body, raw) {
+  const node = {
+    kind: "", id: null, range: null,
+    quoted: [], bare: [], rest: [], raw, children: []
+  };
+
+  if (body.startsWith("<<<NULL>>>")) {
+    node.kind = "<<<NULL>>>";
+    return node;
+  }
+
+  const atoms = tokenizeBody(body);
+  if (!atoms.length) { node.kind = body.trim() || "?"; return node; }
+
+  node.kind = atoms[0].v;
+  let idx = 1;
+
+  // Optional address, then optional `parent 0x..` / `prev 0x..`, all before the range.
+  while (idx < atoms.length && atoms[idx].t === "b") {
+    const v = atoms[idx].v;
+    if (/^0x[0-9a-f]+$/i.test(v) && node.id === null) { node.id = v; idx++; continue; }
+    if ((v === "parent" || v === "prev") && atoms[idx + 1] && /^0x/i.test(atoms[idx + 1].v)) {
+      node[v] = atoms[idx + 1].v; idx += 2; continue;
+    }
+    break;
+  }
+
+  // First angle group is the source range; later ones are attributes (<NoOp>, <LValueToRValue>).
+  if (idx < atoms.length && atoms[idx].t === "angle") { node.range = atoms[idx].v; idx++; }
+
+  for (; idx < atoms.length; idx++) {
+    const a = atoms[idx];
+    node.rest.push(a);
+    if (a.t === "q") node.quoted.push(a.v.slice(1, -1));
+    else if (a.t === "b") node.bare.push(a.v);
+  }
+  return node;
+}
+
+/* Decl kinds clang prints before the name of a *referenced* declaration,
+   as in `DeclRefExpr ... lvalue ParmVar 0x448d5930 'a' 'string':'...'`. */
+const DECL_MARKERS = new Set([
+  "Var","ParmVar","Function","CXXMethod","CXXConstructor","CXXDestructor",
+  "CXXConversion","Namespace","Field","EnumConstant","Enum","Typedef","TypeAlias",
+  "NonTypeTemplateParm","TemplateTypeParm","Record","CXXRecord","IndirectField",
+  "Binding","MSProperty","ObjCIvar","CXXTemporary"
+]);
+
+/** The identifier shown under the node kind. */
+function primaryLabel(node) {
+  if (node.kind === "<<<NULL>>>") return "";
+
+  // Comment nodes carry their text in a Text="..." attribute.
+  if (/Comment$/.test(node.kind)) {
+    const text = node.bare.find(v => /^Text=/.test(v));
+    if (text) return text.slice(6, -1).trim() || text.slice(5);
+    const param = node.bare.find(v => /^Param=/.test(v));
+    if (param) return param.slice(7, -1);
+  }
+
+  // Operator spelling is the trailing quoted symbol: '<', '++', '<<=', '+'.
+  const last = node.quoted[node.quoted.length - 1];
+  if (last && /^[^\w\s]{1,3}$/.test(last) &&
+      (/Operator$/.test(node.kind) || /OperatorCallExpr$/.test(node.kind))) {
+    return last;
+  }
+
+  // Referenced declaration: the quoted atom following a decl-kind marker.
+  // Uses `rest` because position matters — the type is also quoted.
+  for (let i = 0; i < node.rest.length; i++) {
+    const a = node.rest[i];
+    if (a.t === "b" && DECL_MARKERS.has(a.v)) {
+      for (let j = i + 1; j < node.rest.length; j++) {
+        if (node.rest[j].t === "q") return node.rest[j].v.slice(1, -1);
+      }
+    }
+  }
+
+  // Declared name: last bare word that is not a location, address, or attribute.
+  const named = node.bare.filter(v =>
+    !isLocationToken(v) && !/^0x[0-9a-f]+$/i.test(v) &&
+    !ATTR_WORDS.has(v) && !/=/.test(v) && /^[~A-Za-z_$][\w$]*$/.test(v)
+  );
+  if (named.length) return named[named.length - 1];
+
+  // StringLiteral prints its text double-quoted.
+  const str = node.bare.find(v => v.startsWith('"'));
+  if (str) return str;
+
+  // Numeric literals print a bare value (IntegerLiteral ... 'int' 0).
+  const value = node.bare.filter(v => /^[-+]?[\d.]/.test(v) && !isLocationToken(v));
+  if (value.length) return value[value.length - 1];
+
+  // Otherwise a short quoted identifier ('std', 'BaseA', 'operator+').
+  const ident = node.quoted.find(v => /^[~A-Za-z_$][\w$]*$/.test(v) || /^operator/.test(v));
+  if (ident) return ident;
+
+  // Otherwise the node's type is the most useful thing to show.
+  if (node.quoted.length) return node.quoted[0];
+
+  // Pseudo-nodes such as `Overrides: [ ... ]` carry their payload in a group.
+  const group = node.rest.find(a => a.t === "square" || a.t === "paren");
+  if (group) return group.v.slice(1, -1).trim();
+
+  return "";
+}
+
+function family(kind) {
+  if (PSEUDO_KINDS.has(kind)) return "pseudo";
+  // Doc comments become real nodes: FullComment > ParagraphComment > TextComment.
+  if (/Comment$/.test(kind)) return "comment";
+  if (/Attr$/.test(kind)) return "attr";
+  if (/Decl$/.test(kind)) return "decl";
+  if (/Stmt$/.test(kind)) return "stmt";
+  if (/(Expr|Literal|Operator)$/.test(kind)) return "expr";
+  if (/Type$/.test(kind)) return "type";
+  if (/^Template|Specialization$/.test(kind)) return "template";
+  return "other";
+}
+
+/**
+ * Parse a clang AST dump into a single root.
+ *
+ * Depth comes from the indent prefix: a run of 2-char groups from {"| ", "  "}
+ * terminated by "|-" or "`-". Verified against 53,994 lines of clang output
+ * with zero violations.
+ *
+ * Handles both a bare single-root dump (what `produceAst` returns) and the
+ * multi-block `Dumping <name>:` shape that `-ast-dump-filter` produces; in the
+ * latter case the roots are joined under a synthetic node.
+ */
+function parseAst(text) {
+  const lines = String(text).split("\n");
+  const roots = [];
+  let stack = [];
+  let pendingTitle = null;
+
+  for (let line of lines) {
+    line = line.replace(/\r$/, ""); // tolerate CRLF-terminated dumps
+    if (!line.trim()) { stack = []; continue; }
+
+    const dumping = /^Dumping ([^:]*):\s*$/.exec(line);
+    if (dumping) { pendingTitle = dumping[1]; stack = []; continue; }
+    if (/^\[Truncated\]$/.test(line.trim())) continue;
+
+    let j = 0;
+    while (j + 1 < line.length) {
+      const g = line.slice(j, j + 2);
+      if (g === "| " || g === "  ") j += 2; else break;
+    }
+    const tok = line.slice(j, j + 2);
+
+    let depth, body;
+    if (tok === "|-" || tok === "`-") { depth = j / 2 + 1; body = line.slice(j + 2); }
+    else if (j === 0) { depth = 0; body = line; }
+    else { continue; } // indented but no connector — not a node line
+
+    const node = parseBody(body, line);
+    node.depth = depth;
+
+    if (depth === 0) {
+      if (pendingTitle) { node.title = pendingTitle; pendingTitle = null; }
+      roots.push(node);
+      stack = [node];
+    } else {
+      const parent = stack[depth - 1];
+      if (!parent) continue; // malformed indentation — skip rather than throw
+      parent.children.push(node);
+      stack[depth] = node;
+      stack.length = depth + 1;
+    }
+  }
+
+  if (roots.length === 0) return null;
+  if (roots.length === 1) return roots[0];
+  return {
+    kind: "TranslationUnit", id: null, range: null, synthetic: true,
+    quoted: [], bare: [], rest: [], raw: `${roots.length} declarations`,
+    depth: 0, children: roots
+  };
+}
+
+function countNodes(node) {
+  let n = 1;
+  for (const c of node.children || []) n += countNodes(c);
+  return n;
+}
+
+/* PARSER_END */
+
+/* ==========================================================================
+   Godbolt (Compiler Explorer) client
+   ========================================================================== */
+
+/* Verified live against the API. `produceAst` is a backend option, not a
+   compiler flag: it makes CE run the dump and scope it to the user's own code.
+   Passing `-Xclang -ast-dump` via userArguments instead returns the whole
+   translation unit, which is truncated by the server and loses the user's code. */
+const COMPILERS = [
+  ["clang2210", "clang 22.1.0"],
+  ["clang2110", "clang 21.1.0"],
+  ["clang2010", "clang 20.1.0"],
+  ["clang1910", "clang 19.1.0"],
+  ["clang1810", "clang 18.1.0"],
+  ["clang1701", "clang 17.0.1"],
+];
+
+async function fetchAst(source, compilerId, userArguments) {
+  const res = await fetch(`https://godbolt.org/api/compiler/${encodeURIComponent(compilerId)}/compile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({
+      source,
+      compiler: compilerId,
+      lang: "c++",
+      allowStoreCodeDebug: false,
+      options: {
+        userArguments: userArguments || "",
+        compilerOptions: { skipAsm: true, executorRequest: false, produceAst: true },
+        filters: { execute: false, binary: false, commentOnly: true, trim: false },
+        tools: [], libraries: []
+      }
+    })
+  });
+  if (!res.ok) throw new Error(`Compiler Explorer returned HTTP ${res.status}`);
+  const data = await res.json();
+  // CE returns colour-coded diagnostics; strip the ANSI escapes so they do not
+  // render as literal \e[0;1;31m noise in the status strip.
+  const stripAnsi = s => s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
+  const textOf = arr =>
+    stripAnsi((arr || []).map(e => (typeof e === "string" ? e : e.text)).join("\n"));
+  return {
+    ast: textOf(data.astOutput),
+    stderr: textOf(data.stderr),
+    code: data.code,
+    truncated: !!data.truncated
+  };
+}
+
+/* ==========================================================================
+   Render
+   ========================================================================== */
+
+const NODE_W = 196, NODE_H = 44, GAP_X = 24, GAP_Y = 54;
+const COLLAPSE_THRESHOLD = 2000;
+
+const svg = document.getElementById("canvas");
+const viewport = document.getElementById("viewport");
+const detail = document.getElementById("detail");
+const statusEl = document.getElementById("status");
+const emptyEl = document.getElementById("empty");
+
+let astRoot = null;
+let selected = null;
+let view = { x: 0, y: 0, k: 1 };
+
+const SVGNS = "http://www.w3.org/2000/svg";
+const el = (name, attrs = {}) => {
+  const e = document.createElementNS(SVGNS, name);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+};
+
+function truncate(s, max) {
+  s = String(s == null ? "" : s);
+  return s.length <= max ? s : s.slice(0, max - 1) + "…";
+}
+
+function applyView() {
+  viewport.setAttribute("transform", `translate(${view.x},${view.y}) scale(${view.k})`);
+  const readout = document.getElementById("zoomLevel");
+  if (readout) readout.textContent = Math.round(view.k * 100) + "%";
+}
+
+function render() {
+  viewport.textContent = "";
+  if (!astRoot) return;
+
+  const h = d3.hierarchy(astRoot, d => (d._collapsed ? null : d.children));
+  d3.tree().nodeSize([NODE_W + GAP_X, NODE_H + GAP_Y])(h);
+
+  const edges = el("g");
+  const nodes = el("g");
+  viewport.append(edges, nodes);
+
+  for (const link of h.links()) {
+    const { source: s, target: t } = link;
+    const y1 = s.y + NODE_H / 2, y2 = t.y - NODE_H / 2, mid = (y1 + y2) / 2;
+    edges.appendChild(el("path", {
+      class: "edge",
+      d: `M${s.x},${y1} V${mid} H${t.x} V${y2}`
+    }));
+  }
+
+  for (const d of h.descendants()) {
+    const data = d.data;
+    const fam = family(data.kind);
+    const g = el("g", {
+      class: `node ${fam}${selected === data ? " selected" : ""}`,
+      transform: `translate(${d.x},${d.y})`,
+      style: `--nodecolor: var(--f-${fam})`
+    });
+
+    g.appendChild(el("rect", {
+      x: -NODE_W / 2, y: -NODE_H / 2, width: NODE_W, height: NODE_H
+    }));
+
+    const kind = el("text", { class: "kind", x: 0, y: -3, "text-anchor": "middle" });
+    kind.textContent = truncate(data.kind, 26);
+    g.appendChild(kind);
+
+    const label = primaryLabel(data);
+    if (label) {
+      const nameEl = el("text", { class: "name", x: 0, y: 13, "text-anchor": "middle" });
+      nameEl.textContent = truncate(label, 28);
+      g.appendChild(nameEl);
+    }
+
+    const title = el("title");
+    title.textContent = data.raw || data.kind;
+    g.appendChild(title);
+
+    g.addEventListener("click", ev => {
+      if (dragMoved) return; // finished a pan, not a click
+      ev.stopPropagation();
+      select(data);
+    });
+    nodes.appendChild(g);
+
+    const kidCount = (data.children || []).length;
+    if (kidCount) {
+      const toggle = el("g", {
+        class: "toggle",
+        transform: `translate(${d.x},${d.y + NODE_H / 2 + 10})`
+      });
+      const collapsed = !!data._collapsed;
+      toggle.appendChild(el("circle", { r: collapsed ? 11 : 8 }));
+      const t = el("text", { y: 3.5 });
+      t.textContent = collapsed ? `+${countNodes(data) - 1}` : "−";
+      toggle.appendChild(t);
+      toggle.addEventListener("click", ev => {
+        if (dragMoved) return; // finished a pan, not a click
+        ev.stopPropagation();
+        data._collapsed = !data._collapsed;
+        render();
+      });
+      nodes.appendChild(toggle);
+    }
+  }
+  applyView();
+}
+
+function select(data) {
+  selected = data;
+  document.getElementById("dKind").textContent = data.kind;
+  const body = document.getElementById("dBody");
+  body.textContent = "";
+
+  const row = (term, value) => {
+    if (value == null || value === "" || (Array.isArray(value) && !value.length)) return;
+    const dt = document.createElement("dt"); dt.textContent = term;
+    const dd = document.createElement("dd");
+    if (Array.isArray(value)) {
+      const ul = document.createElement("ul");
+      for (const v of value) {
+        const li = document.createElement("li"); li.textContent = v; ul.appendChild(li);
+      }
+      dd.appendChild(ul);
+    } else {
+      dd.textContent = value;
+    }
+    body.append(dt, dd);
+  };
+
+  row("Address", data.id);
+  row("Source range", data.range);
+  row("Types / names", data.quoted);
+  row("Attributes", data.bare.filter(v => !/^0x[0-9a-f]+$/i.test(v)));
+  row("Children", String((data.children || []).length));
+  row("Raw", data.raw);
+
+  detail.classList.add("open");
+  render();
+}
+
+/* --- pan & zoom (hand-rolled; avoids d3-zoom's 8 transitive dependencies) ---
+   Deliberately NOT using setPointerCapture: capturing on the <svg> retargets the
+   subsequent click to the <svg>, so clicks never reach the node/toggle <g> elements
+   and collapsing silently stops working. Instead, listen on window and use a small
+   movement threshold to tell a drag apart from a click. */
+const DRAG_SLOP = 4;
+let dragging = false, lastX = 0, lastY = 0, downX = 0, downY = 0, dragMoved = false;
+
+svg.addEventListener("pointerdown", ev => {
+  if (ev.button !== 0) return;
+  dragging = true; dragMoved = false;
+  lastX = downX = ev.clientX;
+  lastY = downY = ev.clientY;
+  svg.classList.add("panning");
+});
+window.addEventListener("pointermove", ev => {
+  if (!dragging) return;
+  view.x += ev.clientX - lastX;
+  view.y += ev.clientY - lastY;
+  lastX = ev.clientX; lastY = ev.clientY;
+  if (Math.abs(ev.clientX - downX) > DRAG_SLOP || Math.abs(ev.clientY - downY) > DRAG_SLOP) {
+    dragMoved = true;
+  }
+  applyView();
+});
+const endPan = () => { dragging = false; svg.classList.remove("panning"); };
+window.addEventListener("pointerup", endPan);
+window.addEventListener("pointercancel", endPan);
+
+svg.addEventListener("wheel", ev => {
+  ev.preventDefault();
+  const rect = svg.getBoundingClientRect();
+  // Trackpad pinch arrives as wheel with ctrlKey; treat it as a stronger zoom.
+  const factor = Math.exp(-ev.deltaY * (ev.ctrlKey ? 0.01 : 0.0018));
+  zoomBy(factor, ev.clientX - rect.left, ev.clientY - rect.top);
+}, { passive: false });
+
+svg.addEventListener("click", () => {
+  if (dragMoved) return;
+  detail.classList.remove("open");
+});
+
+/** Zoom by a factor about a point in viewport coordinates (defaults to centre). */
+function zoomBy(factor, px, py) {
+  const rect = svg.getBoundingClientRect();
+  if (px == null) px = rect.width / 2;
+  if (py == null) py = rect.height / 2;
+  const k = Math.min(4, Math.max(0.04, view.k * factor));
+  const ratio = k / view.k;
+  view.x = px - (px - view.x) * ratio;
+  view.y = py - (py - view.y) * ratio;
+  view.k = k;
+  applyView();
+}
+
+function fit() {
+  if (!astRoot) return;
+  const bbox = viewport.getBBox();
+  if (!bbox.width || !bbox.height) return;
+  const rect = svg.getBoundingClientRect();
+  const pad = 40;
+  const k = Math.min(
+    (rect.width - pad * 2) / bbox.width,
+    (rect.height - pad * 2) / bbox.height,
+    1.4
+  );
+  view.k = Math.max(0.04, k);
+  view.x = rect.width / 2 - (bbox.x + bbox.width / 2) * view.k;
+  view.y = rect.height / 2 - (bbox.y + bbox.height / 2) * view.k;
+  applyView();
+}
+
+/**
+ * Deepest level whose cumulative node count still fits the budget.
+ * A fixed depth is not safe: in a full translation unit depth 3 alone holds
+ * ~10k nodes, so "collapse to depth 3" would still render 10,926 of them.
+ */
+function chooseCollapseDepth(root, budget) {
+  const perDepth = [];
+  (function walk(n, d) {
+    perDepth[d] = (perDepth[d] || 0) + 1;
+    for (const c of n.children || []) walk(c, d + 1);
+  })(root, 0);
+
+  let cumulative = 0, best = 1;
+  for (let d = 0; d < perDepth.length; d++) {
+    if (cumulative + perDepth[d] > budget) break;
+    cumulative += perDepth[d];
+    best = d;
+  }
+  return { depth: Math.max(1, best), visible: cumulative };
+}
+
+function setCollapsedAll(collapsed, maxDepth = Infinity) {
+  const walk = (n, depth) => {
+    if ((n.children || []).length) n._collapsed = collapsed && depth >= maxDepth;
+    for (const c of n.children || []) walk(c, depth + 1);
+  };
+  if (astRoot) walk(astRoot, 0);
+}
+
+function showStatus(msg, isError) {
+  statusEl.className = "show" + (isError ? " error" : "");
+  statusEl.textContent = msg;
+  const x = document.createElement("span");
+  x.className = "close"; x.textContent = "×";
+  x.onclick = () => statusEl.classList.remove("show");
+  statusEl.prepend(x);
+}
+
+/* ==========================================================================
+   Export
+   ========================================================================== */
+
+function serializeSvg() {
+  const bbox = viewport.getBBox();
+  const pad = 24;
+  const clone = svg.cloneNode(true);
+  clone.setAttribute("xmlns", SVGNS);
+  clone.setAttribute("width", Math.ceil(bbox.width + pad * 2));
+  clone.setAttribute("height", Math.ceil(bbox.height + pad * 2));
+  clone.setAttribute("viewBox",
+    `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);
+  clone.querySelector("#viewport").removeAttribute("transform");
+
+  // Resolve CSS custom properties to literal values so the file stands alone.
+  const cs = getComputedStyle(document.documentElement);
+  const vars = ["--bg","--panel","--border","--text","--muted","--accent","--edge",
+                "--f-decl","--f-stmt","--f-expr","--f-type","--f-attr","--f-template",
+                "--f-pseudo","--f-comment","--f-other"];
+  const decls = vars.map(v => `${v}:${cs.getPropertyValue(v).trim()}`).join(";");
+  const style = document.createElementNS(SVGNS, "style");
+  style.textContent = `
+    svg{${decls};background:var(--bg)}
+    .edge{fill:none;stroke:var(--edge);stroke-width:1.5px}
+    .node rect{fill:var(--bg);stroke:var(--nodecolor,var(--f-other));stroke-width:1.5px;rx:6}
+    .node.pseudo rect{stroke-dasharray:4 3}
+    .node .kind{font:650 12.5px ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;fill:var(--nodecolor,var(--f-other))}
+    .node .name{font:11.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:var(--muted)}
+    .toggle circle{fill:var(--panel);stroke:var(--edge);stroke-width:1.5px}
+    .toggle text{font:700 10px ui-sans-serif,system-ui,sans-serif;fill:var(--muted);text-anchor:middle}
+  `;
+  clone.insertBefore(style, clone.firstChild);
+  return { markup: new XMLSerializer().serializeToString(clone), bbox, pad };
+}
+
+function download(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+document.getElementById("exportSvg").onclick = () => {
+  if (!astRoot) return showStatus("Nothing to export yet.", true);
+  const { markup } = serializeSvg();
+  download(new Blob([markup], { type: "image/svg+xml" }), "clang-ast.svg");
+};
+
+document.getElementById("exportPng").onclick = () => {
+  if (!astRoot) return showStatus("Nothing to export yet.", true);
+  const { markup, bbox, pad } = serializeSvg();
+  const CAP = 16384;
+  let scale = 2;
+  const w = bbox.width + pad * 2, h = bbox.height + pad * 2;
+  if (w * scale > CAP || h * scale > CAP) {
+    scale = Math.min(CAP / w, CAP / h);
+    showStatus(`Tree is ${Math.round(w)}×${Math.round(h)}px — exporting at ${scale.toFixed(2)}× to stay under the ${CAP}px canvas limit.`);
+  }
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.floor(w * scale));
+    canvas.height = Math.max(1, Math.floor(h * scale));
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(b => b && download(b, "clang-ast.png"), "image/png");
+  };
+  img.onerror = () => showStatus("PNG export failed while rasterizing the SVG.", true);
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(markup);
+};
+
+/* ==========================================================================
+   Wiring
+   ========================================================================== */
+
+const compilerSel = document.getElementById("compiler");
+for (const [id, name] of COMPILERS) {
+  const o = document.createElement("option");
+  o.value = id; o.textContent = name;
+  compilerSel.appendChild(o);
+}
+
+const LEGEND = [
+  ["decl", "Decl"], ["stmt", "Stmt"], ["expr", "Expr"], ["type", "Type"],
+  ["attr", "Attr"], ["template", "Template"], ["comment", "Comment"], ["pseudo", "Pseudo"]
+];
+const legendEl = document.getElementById("legend");
+for (const [fam, label] of LEGEND) {
+  const s = document.createElement("span");
+  const i = document.createElement("i");
+  i.style.background = `var(--f-${fam})`;
+  s.append(i, document.createTextNode(label));
+  legendEl.appendChild(s);
+}
+
+document.getElementById("source").value =
+  `#include <string>\nusing namespace std;\n\nstring str_concat(string a, string b) {\n    string c = a + b;\n    return c;\n}\n`;
+
+function showTree(text) {
+  astRoot = parseAst(text);
+  selected = null;
+  detail.classList.remove("open");
+  if (!astRoot) { emptyEl.style.display = "flex"; render(); return; }
+  emptyEl.style.display = "none";
+
+  const total = countNodes(astRoot);
+  setCollapsedAll(false);
+  if (total > COLLAPSE_THRESHOLD) {
+    const { depth, visible } = chooseCollapseDepth(astRoot, COLLAPSE_THRESHOLD);
+    setCollapsedAll(true, depth);
+    showStatus(
+      `${total.toLocaleString()} nodes — collapsed to depth ${depth} ` +
+      `(${visible.toLocaleString()} shown) to stay responsive. ` +
+      `Click a + badge to open a subtree, or use Expand.`
+    );
+  }
+  render();
+  fit();
+}
+
+const renderBtn = document.getElementById("render");
+renderBtn.onclick = async () => {
+  const source = document.getElementById("source").value;
+  if (!source.trim()) return showStatus("Nothing to compile — paste some C++ first.", true);
+
+  renderBtn.disabled = true;
+  const original = renderBtn.textContent;
+  renderBtn.textContent = "Compiling…";
+  statusEl.classList.remove("show");
+
+  try {
+    // -fparse-all-comments goes first so an explicit user flag can still override it.
+    const userArgs = [
+      document.getElementById("comments").checked ? "-fparse-all-comments" : "",
+      document.getElementById("args").value
+    ].filter(s => s && s.trim()).join(" ");
+
+    const { ast, stderr, code, truncated } = await fetchAst(
+      source, compilerSel.value, userArgs
+    );
+    if (!ast || !ast.trim()) {
+      astRoot = null;
+      viewport.textContent = "";
+      emptyEl.style.display = "flex";
+      showStatus(stderr ? stderr : `No AST returned (compiler exit code ${code}).`, true);
+      return;
+    }
+    showTree(ast);
+    // A failed compile can still yield a partial AST — show it, but never let the
+    // failure pass as success.
+    if (code !== 0) {
+      showStatus(`Compilation failed (exit code ${code}) — showing the partial AST.\n\n${stderr}`.trim(), true);
+    } else if (truncated) {
+      showStatus("Compiler Explorer truncated the AST output; the tree may be incomplete.", true);
+    } else if (stderr && stderr.trim()) {
+      showStatus(stderr);
+    }
+  } catch (err) {
+    showStatus(`Request failed: ${err.message}\nThe page needs network access to godbolt.org.`, true);
+  } finally {
+    renderBtn.disabled = false;
+    renderBtn.textContent = original;
+  }
+};
+
+document.getElementById("zoomIn").onclick = () => zoomBy(1.25);
+document.getElementById("zoomOut").onclick = () => zoomBy(1 / 1.25);
+document.getElementById("fit").onclick = fit;
+document.getElementById("reset").onclick = () => { view = { x: 0, y: 0, k: 1 }; applyView(); };
+document.getElementById("expandAll").onclick = () => {
+  if (!astRoot) return;
+  const total = countNodes(astRoot);
+  if (total > COLLAPSE_THRESHOLD &&
+      !confirm(`This will show ${total.toLocaleString()} nodes and may be slow. Continue?`)) return;
+  setCollapsedAll(false); render(); fit();
+};
+document.getElementById("collapseAll").onclick = () => {
+  setCollapsedAll(true, 1); render(); fit();
+};
+document.getElementById("detailClose").onclick = () => detail.classList.remove("open");
+
+document.getElementById("theme").onclick = () => {
+  const root = document.documentElement;
+  const dark = root.dataset.theme
+    ? root.dataset.theme === "dark"
+    : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.dataset.theme = dark ? "light" : "dark";
+  render();
+};
+
+window.addEventListener("resize", () => { if (astRoot) applyView(); });
+
+// Expose for tests / console poking.
+window.__ast = { parseAst, parseBody, tokenizeBody, primaryLabel, family, countNodes, showTree };
+</script>

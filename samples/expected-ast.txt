@@ -1,0 +1,21 @@
+TranslationUnitDecl
+|-UsingDirectiveDecl <line:2:1, col:17> col:17 Namespace 0x22851100 'std'
+`-FunctionDecl <line:4:1, line:7:1> line:4:8 str_concat 'string (string, string)'
+  |-ParmVarDecl <col:19, col:26> col:26 used a 'string':'std::basic_string<char>' destroyed
+  |-ParmVarDecl <col:29, col:36> col:36 used b 'string':'std::basic_string<char>' destroyed
+  `-CompoundStmt <col:39, line:7:1>
+    |-DeclStmt <line:5:5, col:21>
+    | `-VarDecl <col:5, col:20> col:12 used c 'string':'std::basic_string<char>' nrvo cinit destroyed
+    |   `-ExprWithCleanups <col:16, col:20> 'basic_string<char, std::char_traits<char>, std::allocator<char>>':'std::basic_string<char>'
+    |     `-CXXBindTemporaryExpr <col:16, col:20> 'basic_string<char, std::char_traits<char>, std::allocator<char>>':'std::basic_string<char>' (CXXTemporary 0x23398168)
+    |       `-CXXOperatorCallExpr <col:16, col:20> 'basic_string<char, std::char_traits<char>, std::allocator<char>>':'std::basic_string<char>' '+'
+    |         |-ImplicitCastExpr <col:18> 'basic_string<char, std::char_traits<char>, std::allocator<char>> (*)(const basic_string<char, std::char_traits<char>, std::allocator<char>> &, const basic_string<char, std::char_traits<char>, std::allocator<char>> &)' <FunctionToPointerDecay>
+    |         | `-DeclRefExpr <col:18> 'basic_string<char, std::char_traits<char>, std::allocator<char>> (const basic_string<char, std::char_traits<char>, std::allocator<char>> &, const basic_string<char, std::char_traits<char>, std::allocator<char>> &)' lvalue Function 0x23396610 'operator+' 'basic_string<char, std::char_traits<char>, std::allocator<char>> (const basic_string<char, std::char_traits<char>, std::allocator<char>> &, const basic_string<char, std::char_traits<char>, std::allocator<char>> &)'
+    |         |-ImplicitCastExpr <col:16> 'const basic_string<char, std::char_traits<char>, std::allocator<char>>':'const std::basic_string<char>' lvalue <NoOp>
+    |         | `-DeclRefExpr <col:16> 'string':'std::basic_string<char>' lvalue ParmVar 0x23395c50 'a' 'string':'std::basic_string<char>'
+    |         `-ImplicitCastExpr <col:20> 'const basic_string<char, std::char_traits<char>, std::allocator<char>>':'const std::basic_string<char>' lvalue <NoOp>
+    |           `-DeclRefExpr <col:20> 'string':'std::basic_string<char>' lvalue ParmVar 0x23395cd0 'b' 'string':'std::basic_string<char>'
+    `-ReturnStmt <line:6:5, col:12> nrvo_candidate(Var 0x23395ee0 'c' 'string':'std::basic_string<char>')
+      `-CXXConstructExpr <col:12> 'string':'std::basic_string<char>' 'void (basic_string<char> &&) noexcept'
+        `-ImplicitCastExpr <col:12> 'string':'std::basic_string<char>' xvalue <NoOp>
+          `-DeclRefExpr <col:12> 'string':'std::basic_string<char>' lvalue Var 0x23395ee0 'c' 'string':'std::basic_string<char>'

@@ -1,0 +1,36 @@
+# Playwright MCP scratch output (screenshots, snapshots, console logs)
+.playwright-mcp/
+
+# Node
+node_modules/
+*.tgz
+npm-debug.log*
+yarn-error.log*
+
+# Local scratch — large AST dumps used for stress testing are regenerated, not committed
+_huge_tmp.txt
+*.dump.txt
+scratch/
+tmp/
+
+# Build/compiler artefacts from poking at samples with a local clang
+*.o
+*.obj
+*.out
+a.out
+compile_commands.json
+.cache/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+desktop.ini
